@@ -9,6 +9,12 @@ const char* password = "Otchia123";
 // Next.js server
 const char* serverURL = "http://192.168.100.165:3000/api/occupancy";
 
+// ─── ROOM CONFIGURATION ───────────────────────────────────────────
+const char* roomId   = "AX2Ir6dYLvLQ6TMtQLc";
+const char* roomName = "Room 101";
+const char* beaconId = "C4:BE:84:D7:DF:FC";
+// ──────────────────────────────────────────────────────────────────
+
 // NTP time config (UTC+8 Philippines)
 const char* ntpServer      = "pool.ntp.org";
 const long  gmtOffset      = 28800;
@@ -59,7 +65,6 @@ void getCurrentHourMinute(int &hour, int &minute) {
     minute = -1;
     return;
   }
-
   hour   = timeinfo.tm_hour;
   minute = timeinfo.tm_min;
 }
@@ -142,7 +147,11 @@ void sendToServer(const String &connectionStatus, const String &eventType) {
   http.begin(serverURL);
   http.addHeader("Content-Type", "application/json");
 
+  // ✅ beaconId now included in every payload
   String payload = "{";
+  payload += "\"roomId\":\"" + String(roomId) + "\",";
+  payload += "\"roomName\":\"" + String(roomName) + "\",";
+  payload += "\"beaconId\":\"" + String(beaconId) + "\",";
   payload += "\"occupancy\":" + String(occupancyCount) + ",";
   payload += "\"timestamp\":\"" + getTimeString() + "\",";
   payload += "\"connectionStatus\":\"" + connectionStatus + "\",";
@@ -179,12 +188,18 @@ void setup() {
   Serial.println("=====================================");
   Serial.println(" Occupancy Detection + HTTP Send");
   Serial.println("=====================================");
+  Serial.print("Room ID   : ");
+  Serial.println(roomId);
+  Serial.print("Room Name : ");
+  Serial.println(roomName);
+  Serial.print("Beacon ID : ");
+  Serial.println(beaconId);
+  Serial.println("=====================================");
 
   WiFi.mode(WIFI_STA);
   connectWiFi(20000);
 
   lastIntervalSend = 0;
-  bool firstBoot = true;
 
   Serial.println("-------------------------------------");
   Serial.println("Waiting for Bluetooth connection...");
@@ -238,11 +253,11 @@ void loop() {
   }
 
   if (firstBoot || millis() - lastIntervalSend >= intervalMS) {
-  firstBoot        = false;
-  lastIntervalSend = millis();
-  Serial.println("Interval update sending...");
-  sendToServer(getConnectionStatus(currentState), "INTERVAL_UPDATE");
-}
+    firstBoot        = false;
+    lastIntervalSend = millis();
+    Serial.println("Interval update sending...");
+    sendToServer(getConnectionStatus(currentState), "INTERVAL_UPDATE");
+  }
 
   int currentHour, currentMinute;
   getCurrentHourMinute(currentHour, currentMinute);
