@@ -1,19 +1,25 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <time.h>
+#include <NimBLEDevice.h>
 
 // WiFi credentials
-const char* ssid     = "HUAWEI-2.4G-f22F";
-const char* password = "Otchia123";
+const char* ssid     = "PLDTHOMEFIBRf7608";
+const char* password = "[Bl4nk]69420";
 
 // Next.js server
-const char* serverURL = "http://192.168.100.165:3000/api/occupancy";
+const char* serverURL = "http://192.168.1.2:3000/api/occupancy";
 
-// ─── ROOM CONFIGURATION ───────────────────────────────────────────
+// Room configuration
 const char* roomId   = "AX2Ir6dYLvLQ6TMtQLc";
-const char* roomName = "Room 101";
-const char* beaconId = "C4:BE:84:D7:DF:FC";
-// ──────────────────────────────────────────────────────────────────
+const char* roomName = "Room 509";
+const char* beaconId = "gd3-509-beacon";
+
+// BLE configuration
+const char* BLE_DEVICE_NAME       = "ESP32";
+const char* BLE_SERVICE_UUID      = "7becefce-f0e2-4a3e-8db6-53a9ee63f176";
+const char* BLE_BEACON_CHAR_UUID  = "2c993f0e-0b22-47c1-b9c2-8d1fbe4b1973";
+const char* BLE_ROOM_CHAR_UUID    = "e6c852eb-6b87-4c6d-ada4-264f19b5da6c";
 
 // NTP time config (UTC+8 Philippines)
 const char* ntpServer      = "pool.ntp.org";
@@ -21,33 +27,31 @@ const long  gmtOffset      = 28800;
 const int   daylightOffset = 0;
 
 // Pin definitions
-#define RXD2      25
-#define TXD2      26
-#define STATE_PIN 34
-#define LED_PIN   13
+#define LED_PIN 13
 
 // Reservation alert time
 #define ALERT_HOUR   22
 #define ALERT_MINUTE 30
 
 // Timing
-const unsigned long intervalMS   = 600000;
-const unsigned long wifiRetryMS  = 10000;
-const unsigned long wifiWaitMS   = 10000;
-const uint16_t      httpConnMS   = 3000;
-const uint16_t      httpReadMS   = 5000;
-const unsigned long loopDelayMS  = 200;
-const unsigned long serialTOms   = 50;
+const unsigned long intervalMS       = 600000;
+const unsigned long wifiRetryMS      = 10000;
+const unsigned long wifiWaitMS       = 10000;
+const uint16_t httpConnMS            = 10000;
+const uint16_t httpReadMS            = 10000;
+const unsigned long loopDelayMS      = 200;
+const unsigned long reconnectDelayMS = 500;
 
 // State
 int occupancyCount               = 0;
-bool lastState                   = false;
-bool currentState                = false;
+bool deviceConnected             = false;
+bool previousDeviceConnected     = false;
 bool alertSent                   = false;
 bool firstBoot                   = true;
 bool wifiWasConnected            = false;
 unsigned long lastIntervalSend   = 0;
 unsigned long lastWiFiRetry      = 0;
+NimBLEServer* bleServer          = nullptr;
 
 String getTimeString() {
   struct tm timeinfo;
@@ -58,23 +62,25 @@ String getTimeString() {
   return String(buffer) + "+08:00";
 }
 
-void getCurrentHourMinute(int &hour, int &minute) {
+void getCurrentHourMinute(int& hour, int& minute) {
   struct tm timeinfo;
   if (!getLocalTime(&timeinfo)) {
     hour = -1;
     minute = -1;
     return;
   }
-  hour   = timeinfo.tm_hour;
+
+  hour = timeinfo.tm_hour;
   minute = timeinfo.tm_min;
 }
 
-String getConnectionStatus(bool state) {
-  return state ? "CONNECTED" : "DISCONNECTED";
+String getConnectionStatus(bool connected) {
+  return connected ? "CONNECTED" : "DISCONNECTED";
 }
 
-void syncOccupancyToState(bool state) {
-  occupancyCount = state ? 1 : 0;
+void syncOccupancyToState(bool connected) {
+  occupancyCount = connected ? 1 : 0;
+  digitalWrite(LED_PIN, connected ? HIGH : LOW);
 }
 
 void onWiFiConnected() {
@@ -83,7 +89,7 @@ void onWiFiConnected() {
   Serial.println(WiFi.localIP());
 
   configTime(gmtOffset, daylightOffset, ntpServer);
-  delay(500);
+  delay(3000);
 
   Serial.print("Current Time: ");
   Serial.println(getTimeString());
@@ -133,7 +139,7 @@ void ensureWiFi() {
   connectWiFi(wifiWaitMS);
 }
 
-void sendToServer(const String &connectionStatus, const String &eventType) {
+void sendToServer(const String& connectionStatus, const String& eventType) {
   ensureWiFi();
 
   if (WiFi.status() != WL_CONNECTED) {
@@ -147,7 +153,6 @@ void sendToServer(const String &connectionStatus, const String &eventType) {
   http.begin(serverURL);
   http.addHeader("Content-Type", "application/json");
 
-  // ✅ beaconId now included in every payload
   String payload = "{";
   payload += "\"roomId\":\"" + String(roomId) + "\",";
   payload += "\"roomName\":\"" + String(roomName) + "\",";
@@ -176,33 +181,84 @@ void sendToServer(const String &connectionStatus, const String &eventType) {
   http.end();
 }
 
+class ReservationBleCallbacks : public NimBLEServerCallbacks {
+  void onConnect(NimBLEServer* server, NimBLEConnInfo& connInfo) override {
+    deviceConnected = true;
+    Serial.println("-------------------------------------");
+    Serial.println("BLE client connected");
+    Serial.print("Time            : ");
+    Serial.println(getTimeString());
+    Serial.println("-------------------------------------");
+  }
+
+  void onDisconnect(NimBLEServer* server, NimBLEConnInfo& connInfo, int reason) override {
+    deviceConnected = false;
+    Serial.println("-------------------------------------");
+    Serial.println("BLE client disconnected");
+    Serial.print("Time            : ");
+    Serial.println(getTimeString());
+    Serial.println("-------------------------------------");
+  }
+};
+
+void setupBle() {
+  NimBLEDevice::init(BLE_DEVICE_NAME);
+
+  bleServer = NimBLEDevice::createServer();
+  bleServer->setCallbacks(new ReservationBleCallbacks());
+
+  NimBLEService* service = bleServer->createService(BLE_SERVICE_UUID);
+
+  NimBLECharacteristic* beaconChar = service->createCharacteristic(
+    BLE_BEACON_CHAR_UUID,
+    NIMBLE_PROPERTY::READ
+  );
+  beaconChar->setValue(beaconId);
+
+  NimBLECharacteristic* roomChar = service->createCharacteristic(
+    BLE_ROOM_CHAR_UUID,
+    NIMBLE_PROPERTY::READ
+  );
+  roomChar->setValue(roomId);
+
+  service->start();
+
+  NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();
+  advertising->addServiceUUID(BLE_SERVICE_UUID);
+  advertising->start();
+
+  Serial.println("BLE advertising started");
+  Serial.print("Service UUID : ");
+  Serial.println(BLE_SERVICE_UUID);
+  Serial.print("Beacon ID    : ");
+  Serial.println(beaconId);
+}
+
 void setup() {
   Serial.begin(115200);
-  Serial2.begin(9600, SERIAL_8N1, RXD2, TXD2);
-  Serial2.setTimeout(serialTOms);
 
-  pinMode(STATE_PIN, INPUT);
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
 
   Serial.println("=====================================");
-  Serial.println(" Occupancy Detection + HTTP Send");
+  Serial.println(" ESP32 BLE Reservation Beacon");
   Serial.println("=====================================");
-  Serial.print("Room ID   : ");
+  Serial.print("Room ID      : ");
   Serial.println(roomId);
-  Serial.print("Room Name : ");
+  Serial.print("Room Name    : ");
   Serial.println(roomName);
-  Serial.print("Beacon ID : ");
+  Serial.print("Beacon ID    : ");
   Serial.println(beaconId);
   Serial.println("=====================================");
 
   WiFi.mode(WIFI_STA);
   connectWiFi(20000);
+  setupBle();
 
   lastIntervalSend = 0;
 
   Serial.println("-------------------------------------");
-  Serial.println("Waiting for Bluetooth connection...");
+  Serial.println("Waiting for BLE reservation client...");
   Serial.println("Alert scheduled at: 10:30 PM");
   Serial.println("-------------------------------------");
 }
@@ -210,53 +266,28 @@ void setup() {
 void loop() {
   ensureWiFi();
 
-  currentState = digitalRead(STATE_PIN);
+  if (deviceConnected != previousDeviceConnected) {
+    syncOccupancyToState(deviceConnected);
 
-  if (currentState == HIGH && lastState == LOW) {
-    syncOccupancyToState(true);
-    digitalWrite(LED_PIN, HIGH);
+    if (deviceConnected) {
+      Serial.println("Device connected event");
+      sendToServer("CONNECTED", "DEVICE_CONNECTED");
+    } else {
+      Serial.println("Device disconnected event");
+      sendToServer("DISCONNECTED", "DEVICE_DISCONNECTED");
+      delay(reconnectDelayMS);
+      NimBLEDevice::startAdvertising();
+      Serial.println("BLE advertising restarted");
+    }
 
-    String timeNow = getTimeString();
-    Serial.println("-------------------------------------");
-    Serial.println("Device connected");
-    Serial.print("Time            : ");
-    Serial.println(timeNow);
-    Serial.print("Occupancy Count : ");
-    Serial.println(occupancyCount);
-    Serial.println("-------------------------------------");
-
-    Serial2.println("CONNECTED:" + timeNow);
-    Serial2.print("OCCUPIED:");
-    Serial2.println(occupancyCount);
-
-    sendToServer("CONNECTED", "DEVICE_CONNECTED");
-  }
-
-  if (currentState == LOW && lastState == HIGH) {
-    syncOccupancyToState(false);
-    digitalWrite(LED_PIN, LOW);
-
-    String timeNow = getTimeString();
-    Serial.println("-------------------------------------");
-    Serial.println("Device disconnected");
-    Serial.print("Time            : ");
-    Serial.println(timeNow);
-    Serial.print("Occupancy Count : ");
-    Serial.println(occupancyCount);
-    Serial.println("-------------------------------------");
-
-    Serial2.println("DISCONNECTED:" + timeNow);
-    Serial2.print("OCCUPIED:");
-    Serial2.println(occupancyCount);
-
-    sendToServer("DISCONNECTED", "DEVICE_DISCONNECTED");
+    previousDeviceConnected = deviceConnected;
   }
 
   if (firstBoot || millis() - lastIntervalSend >= intervalMS) {
-    firstBoot        = false;
+    firstBoot = false;
     lastIntervalSend = millis();
     Serial.println("Interval update sending...");
-    sendToServer(getConnectionStatus(currentState), "INTERVAL_UPDATE");
+    sendToServer(getConnectionStatus(deviceConnected), "INTERVAL_UPDATE");
   }
 
   int currentHour, currentMinute;
@@ -274,12 +305,7 @@ void loop() {
     Serial.println(occupancyCount);
     Serial.println("=====================================");
 
-    Serial2.println("ALERT:END_OF_RESERVATION");
-    Serial2.println("ALERT:10:30 PM - Reservation ended!");
-    Serial2.print("ALERT:Occupancy:");
-    Serial2.println(occupancyCount);
-
-    sendToServer(getConnectionStatus(currentState), "END_OF_RESERVATION");
+    sendToServer(getConnectionStatus(deviceConnected), "END_OF_RESERVATION");
     alertSent = true;
   }
 
@@ -287,48 +313,5 @@ void loop() {
     alertSent = false;
   }
 
-  if (Serial2.available()) {
-    String incoming = Serial2.readStringUntil('\n');
-    incoming.trim();
-
-    if (incoming == "ERROR" ||
-        incoming == "OK" ||
-        incoming == "FAIL" ||
-        incoming == "+DISC:SUCCESS") {
-      Serial.print("Module Status: ");
-      Serial.println(incoming);
-      lastState = currentState;
-      delay(loopDelayMS);
-      return;
-    }
-
-    Serial.print("Received: ");
-    Serial.println(incoming);
-
-    if (incoming == "RESET") {
-      syncOccupancyToState(currentState);
-      digitalWrite(LED_PIN, currentState ? HIGH : LOW);
-      Serial.println("Occupancy synchronized to current connection state");
-      Serial2.println("RESET:OK");
-      sendToServer(getConnectionStatus(currentState), "RESET");
-    }
-
-    if (incoming == "COUNT") {
-      Serial2.print("OCCUPIED:");
-      Serial2.println(occupancyCount);
-    }
-
-    if (incoming == "STATUS") {
-      Serial2.print("STATUS:");
-      Serial2.println(getConnectionStatus(currentState));
-    }
-
-    if (incoming == "TIME") {
-      Serial2.print("TIME:");
-      Serial2.println(getTimeString());
-    }
-  }
-
-  lastState = currentState;
   delay(loopDelayMS);
 }
