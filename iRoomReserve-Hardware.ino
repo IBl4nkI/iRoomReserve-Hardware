@@ -10,7 +10,7 @@ const char* roomName = "Room 509";
 const char* beaconId = "gd3-509-beacon";
 
 // BLE configuration
-const char* BLE_DEVICE_NAME       = "ESP32";
+const char* BLE_DEVICE_NAME       = beaconId;
 const char* BLE_SERVICE_UUID      = "7becefce-f0e2-4a3e-8db6-53a9ee63f176";
 const char* BLE_BEACON_CHAR_UUID  = "2c993f0e-0b22-47c1-b9c2-8d1fbe4b1973";
 const char* BLE_ROOM_CHAR_UUID    = "e6c852eb-6b87-4c6d-ada4-264f19b5da6c";
@@ -218,6 +218,9 @@ void setupBle() {
   service->start();
 
   NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();
+  NimBLEAdvertisementData scanResponseData;
+  scanResponseData.setName(BLE_DEVICE_NAME);
+  advertising->setScanResponseData(scanResponseData);
   advertising->addServiceUUID(BLE_SERVICE_UUID);
   advertising->start();
 
