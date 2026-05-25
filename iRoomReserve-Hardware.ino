@@ -2,13 +2,7 @@
 #include <HTTPClient.h>
 #include <time.h>
 #include <NimBLEDevice.h>
-
-// WiFi credentials
-const char* ssid     = "PLDTHOMEFIBRf7608";
-const char* password = "[Bl4nk]69420";
-
-// Next.js server
-const char* serverURL = "http://192.168.1.2:3000/api/occupancy";
+#include "secrets.h"
 
 // Room configuration
 const char* roomId   = "AX2Ir6dYLvLQ6TMtQLc";
