@@ -28,7 +28,9 @@ const int   daylightOffset = 0;
 #define ALERT_MINUTE 30
 
 // Timing
-const unsigned long intervalMS       = 600000;
+// Send frequent heartbeats so the dashboard can tell powered beacons apart
+// from unplugged ones within about a minute instead of several minutes later.
+const unsigned long intervalMS       = 30000;
 const unsigned long wifiRetryMS      = 10000;
 const unsigned long wifiWaitMS       = 10000;
 const uint16_t httpConnMS            = 10000;
@@ -45,6 +47,7 @@ bool firstBoot                   = true;
 bool wifiWasConnected            = false;
 unsigned long lastIntervalSend   = 0;
 unsigned long lastWiFiRetry      = 0;
+unsigned long lastLoopDebug      = 0;
 NimBLEServer* bleServer          = nullptr;
 
 String getTimeString() {
@@ -267,6 +270,16 @@ void setup() {
 
 void loop() {
   ensureWiFi();
+
+  if (millis() - lastLoopDebug >= 5000) {
+    lastLoopDebug = millis();
+    Serial.print("Loop alive, millis=");
+    Serial.print(millis());
+    Serial.print(", WiFi=");
+    Serial.print(WiFi.status() == WL_CONNECTED ? "connected" : "disconnected");
+    Serial.print(", deviceConnected=");
+    Serial.println(deviceConnected ? "true" : "false");
+  }
 
   if (deviceConnected != previousDeviceConnected) {
     syncOccupancyToState(deviceConnected);
