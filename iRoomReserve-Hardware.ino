@@ -63,7 +63,6 @@ void startBleAdvertising() {
   scanResponseData.addServiceUUID(BLE_SERVICE_UUID);
 
   advertising->stop();
-  advertising->setAdvertisementType(BLE_HS_ADV_TYPE_ADV_IND);
   advertising->setAdvertisementData(advertisementData);
   advertising->setScanResponseData(scanResponseData);
   advertising->enableScanResponse(true);
