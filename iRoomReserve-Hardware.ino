@@ -50,6 +50,35 @@ unsigned long lastWiFiRetry      = 0;
 unsigned long lastLoopDebug      = 0;
 NimBLEServer* bleServer          = nullptr;
 
+void startBleAdvertising() {
+  NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();
+  NimBLEAdvertisementData advertisementData;
+  NimBLEAdvertisementData scanResponseData;
+
+  advertisementData.setFlags(0x06);
+  advertisementData.setName(BLE_DEVICE_NAME);
+  advertisementData.addServiceUUID(BLE_SERVICE_UUID);
+
+  scanResponseData.setName(BLE_DEVICE_NAME);
+  scanResponseData.addServiceUUID(BLE_SERVICE_UUID);
+
+  advertising->stop();
+  advertising->setAdvertisementType(BLE_HS_ADV_TYPE_ADV_IND);
+  advertising->setAdvertisementData(advertisementData);
+  advertising->setScanResponseData(scanResponseData);
+  advertising->enableScanResponse(true);
+  advertising->addServiceUUID(BLE_SERVICE_UUID);
+  advertising->start();
+
+  Serial.println("BLE advertising started");
+  Serial.print("Device name  : ");
+  Serial.println(BLE_DEVICE_NAME);
+  Serial.print("Service UUID : ");
+  Serial.println(BLE_SERVICE_UUID);
+  Serial.print("Beacon ID    : ");
+  Serial.println(beaconId);
+}
+
 String getTimeString() {
   struct tm timeinfo;
   if (!getLocalTime(&timeinfo)) return "TIME_ERROR";
@@ -200,6 +229,7 @@ class ReservationBleCallbacks : public NimBLEServerCallbacks {
 
 void setupBle() {
   NimBLEDevice::init(BLE_DEVICE_NAME);
+  NimBLEDevice::setPower(ESP_PWR_LVL_P9);
 
   bleServer = NimBLEDevice::createServer();
   bleServer->setCallbacks(new ReservationBleCallbacks());
@@ -219,24 +249,7 @@ void setupBle() {
   roomChar->setValue(roomId);
 
   service->start();
-
-  NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();
-  NimBLEAdvertisementData advertisementData;
-  advertisementData.setName(BLE_DEVICE_NAME);
-  advertising->setAdvertisementData(advertisementData);
-
-  NimBLEAdvertisementData scanResponseData;
-  scanResponseData.setName(BLE_DEVICE_NAME);
-  advertising->setScanResponseData(scanResponseData);
-  advertising->enableScanResponse(true);
-  advertising->addServiceUUID(BLE_SERVICE_UUID);
-  advertising->start();
-
-  Serial.println("BLE advertising started");
-  Serial.print("Service UUID : ");
-  Serial.println(BLE_SERVICE_UUID);
-  Serial.print("Beacon ID    : ");
-  Serial.println(beaconId);
+  startBleAdvertising();
 }
 
 void setup() {
@@ -291,7 +304,7 @@ void loop() {
       Serial.println("Device disconnected event");
       sendToServer("DISCONNECTED", "DEVICE_DISCONNECTED");
       delay(reconnectDelayMS);
-      NimBLEDevice::startAdvertising();
+      startBleAdvertising();
       Serial.println("BLE advertising restarted");
     }
 
