@@ -2,12 +2,16 @@
 #include <HTTPClient.h>
 #include <time.h>
 #include <NimBLEDevice.h>
-#include "secrets.h"
+
+// Network configuration
+const char* ssid = "School WiFi";
+const char* password = "WiFi Password";
+const char* serverURL = "https://eroomreserve.vercel.app/api/occupancy";
 
 // Room configuration
-const char* roomId   = "AX2Ir6dYLvLQ6TMtQLc";
-const char* roomName = "Room 509";
-const char* beaconId = "gd3-509-beacon";
+const char* roomId   = "FZmCedyLaIRl3MybhMSw";
+const char* roomName = "GD3 507";
+const char* beaconId = "gd3-507-beacon";
 
 // BLE configuration
 const char* BLE_DEVICE_NAME       = beaconId;
