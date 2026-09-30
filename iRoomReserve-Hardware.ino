@@ -5,13 +5,13 @@
 
 // Network configuration
 const char* ssid = "School WiFi";
-const char* password = "WiFi Password";
+const char* password = "Password";
 const char* serverURL = "https://eroomreserve.vercel.app/api/occupancy";
 
 // Room configuration
-const char* roomId   = "FZmCedyLaIRl3MybhMSw";
-const char* roomName = "GD3 507";
-const char* beaconId = "gd3-507-beacon";
+const char* roomId   = "SFQUtCuNnzaMbcJkrhs6";
+const char* roomName = "GD3 506";
+const char* beaconId = "gd3-506-beacon";
 
 // BLE configuration
 const char* BLE_DEVICE_NAME       = beaconId;
@@ -60,17 +60,17 @@ void startBleAdvertising() {
   NimBLEAdvertisementData scanResponseData;
 
   advertisementData.setFlags(0x06);
-  advertisementData.setName(BLE_DEVICE_NAME);
   advertisementData.addServiceUUID(BLE_SERVICE_UUID);
 
+  // Keep the 128-bit service UUID in the primary advertisement and the
+  // device name in the scan response. Putting both in either packet exceeds
+  // the 31-byte legacy BLE payload limit.
   scanResponseData.setName(BLE_DEVICE_NAME);
-  scanResponseData.addServiceUUID(BLE_SERVICE_UUID);
 
   advertising->stop();
   advertising->setAdvertisementData(advertisementData);
   advertising->setScanResponseData(scanResponseData);
   advertising->enableScanResponse(true);
-  advertising->addServiceUUID(BLE_SERVICE_UUID);
   advertising->start();
 
   Serial.println("BLE advertising started");
